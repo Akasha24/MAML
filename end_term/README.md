@@ -10,19 +10,29 @@ Clone the repository and run the pipeline. By default the pipeline generates new
 # 1. Install dependencies
 pip install -r requirements.txt
 
-# 2. Run full pipeline (generate -> train -> test)
-python run_all.py
+# 2. Generate dataset
+python generate_data.py --seed 123
 
-# or run steps separately (optional seed for reproducibility):
-python generate_data.py --seed 123   # generate reproducible data
+# 3. Train meta-learning model (uses stable hyperparameters)
 python train.py
+
+# 4. Test on new tasks (evaluates MAML vs baseline)
 python test.py
 ```
 
-After ~2 minutes, results appear in `results/`:
-- `train_tasks.npz` / `test_tasks.npz` – meta-learning dataset
-- `plot_loss.png` – MAML vs baseline comparison
+After ~2 minutes, results are generated in `results/`:
+- `train_tasks.npz` / `test_tasks.npz` – generated meta-learning dataset
+- `plot_loss.png` – training loss curve
+- `plot_comparison.png` – MAML vs baseline comparison
 - `maml_model.pt` – trained meta-learning model
+
+**Note:** All data, models, and plots are generated fresh by running the pipeline. No pre-saved files are included.
+
+**Hyperparameters (stable settings for channel estimation):**
+- `inner_lr = 0.0001` – Task adaptation learning rate (preventing divergence)
+- `inner_steps = 1` – Gradient steps per task (preventing overfitting)
+- `outer_lr = 0.001` – Meta-learning rate
+- `meta_iterations = 100` – Meta-training iterations
 
 ## Problem Setup
 

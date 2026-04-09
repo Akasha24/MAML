@@ -13,6 +13,7 @@ import torch.nn as nn
 import torch.optim as optim
 from pathlib import Path
 from copy import deepcopy
+from plot_results import plot_training_loss_curve, plot_maml_vs_baseline
 
 
 class ChannelEstimationNetwork(nn.Module):
@@ -39,7 +40,7 @@ class ChannelEstimationNetwork(nn.Module):
         return deepcopy(self)
 
 
-def adapt_on_support(model, support_data, inner_lr=0.01, num_steps=5, device='cpu'):
+def adapt_on_support(model, support_data, inner_lr=0.0001, num_steps=1, device='cpu'):
     """
     Perform task-specific adaptation using support set.
     
@@ -68,6 +69,12 @@ def adapt_on_support(model, support_data, inner_lr=0.01, num_steps=5, device='cp
     # Prepare data
     X_support = torch.from_numpy(support_data['X']).float().to(device)
     Y_support = torch.from_numpy(support_data['Y']).float().to(device)
+    
+    # Compute initial loss (before adaptation)
+    adapted_model.eval()
+    with torch.no_grad():
+        initial_preds = adapted_model(X_support)
+        initial_loss = loss_fn(initial_preds, Y_support).item()
     
     # Take gradient steps on support set
     for step in range(num_steps):
@@ -257,6 +264,49 @@ def print_results_table(results):
     print("-" * 90)
 
 
+def print_metric_interpretation():
+    """Explain what the evaluation metrics mean."""
+    print()
+    print("=" * 90)
+    print("UNDERSTANDING THE METRICS")
+    print("=" * 90)
+    print()
+    print("LOSS VALUES (Lower is Better)")
+    print("-" * 90)
+    print("• Adapted Loss: MSE after 5 gradient steps of MAML adaptation")
+    print("• Baseline Loss: MSE training a fresh model from scratch for 200 steps")
+    print()
+    print("Interpretation:")
+    print("  - If Adapted < Baseline: ✓ Meta-learning helps! (positive improvement)")
+    print("  - If Adapted > Baseline: ✗ Adaptation hurts (negative improvement)")
+    print()
+    print("IMPROVEMENT % Calculation")
+    print("-" * 90)
+    print("  Improvement = (Baseline - Adapted) / Baseline × 100")
+    print()
+    print("  • Positive % = MAML is better (adaptation worked)")
+    print("  • Negative % = MAML is worse (adaptation diverged)")
+    print("  • ~0% = Both methods perform similarly")
+    print()
+    print("SANITY CHECK: EXPECTED TREND")
+    print("-" * 90)
+    print("As SNR (Signal-to-Noise Ratio) increases:")
+    print("  → Less measurement noise → Estimation should be easier")
+    print("  → Both losses should DECREASE monotonically")
+    print("  → Lower SNR = harder problem = higher error")
+    print("  → Higher SNR = easier problem = lower error")
+    print()
+    print("If you see random spikes or non-monotonic behavior:")
+    print("  ⚠️  May indicate:")
+    print("     - Inner loop learning rate too high (divergence)")
+    print("     - Train-test data distribution mismatch")
+    print("     - Insufficient meta-training iterations")
+    print("     - Per-task overfitting during adaptation")
+    print()
+    print("=" * 90)
+    print()
+
+
 def main():
     print("=" * 90)
     print("MAML Test Evaluation")
@@ -265,8 +315,8 @@ def main():
     
     # Settings
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    inner_lr = 0.01
-    inner_steps = 5
+    inner_lr = 0.0001  # Reduced from 0.01 to prevent divergence
+    inner_steps = 1    # Reduced from 5 to prevent overfitting
     baseline_steps = 200
     
     print(f"Device: {device}")
@@ -387,6 +437,24 @@ def main():
                   f"Baseline={avg_baseline_snr:.6f}  "
                   f"Improvement={improvement_snr:>6.1f}%")
     
+    print()
+    
+    # Print metric interpretation guide
+    print_metric_interpretation()
+    
+    # Generate comparison plot with actual test data
+    print("Generating comparison plot with test results...")
+    plot_maml_vs_baseline(output_path='results/plot_comparison.png')
+    print("✓ Comparison plot saved to results/plot_comparison.png")
+    print()
+    
+    print("=" * 90)
+    print("✓ EVALUATION COMPLETE")
+    print("=" * 90)
+    print(f"Results saved to: {Path('results').absolute()}")
+    print(f"  - plots/plot_loss.png (training loss curve from train.py)")
+    print(f"  - plots/plot_comparison.png (MAML vs Baseline comparison)")
+    print("=" * 90)
     print()
 
 

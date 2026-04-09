@@ -81,7 +81,7 @@ def generate_maml_vs_baseline_data():
     return support_shots, maml_errors, baseline_errors
 
 
-def plot_training_loss_curve(output_path='results/training_loss_curve.png'):
+def plot_training_loss_curve(output_path='results/plot_loss.png'):
     """
     Generate and save training loss curve plot.
     
@@ -131,7 +131,7 @@ def plot_training_loss_curve(output_path='results/training_loss_curve.png'):
     plt.close(fig)
 
 
-def plot_maml_vs_baseline(output_path='results/maml_vs_baseline.png'):
+def plot_maml_vs_baseline(output_path='results/plot_comparison.png'):
     """
     Generate and save MAML vs Baseline comparison plot.
     
@@ -237,10 +237,10 @@ def main():
     
     # Generate plots
     print("Generating training loss curve...")
-    plot_training_loss_curve(output_path='results/training_loss_curve.png')
+    plot_training_loss_curve(output_path='results/plot_loss.png')
     
     print("Generating MAML vs Baseline comparison...")
-    plot_maml_vs_baseline(output_path='results/maml_vs_baseline.png')
+    plot_maml_vs_baseline(output_path='results/plot_comparison.png')
     
     print_summary()
 

@@ -393,9 +393,9 @@ def main():
     maml_trainer = MAMLTrainer(
         model=base_model,
         device=device,
-        inner_lr=0.01,
+        inner_lr=0.0001,  # Reduced to stable learning rate
         outer_lr=0.001,
-        inner_steps=5
+        inner_steps=1    # Reduced from 5 to prevent adaptation overfitting
     )
     
     baseline_trainer = BaselineTrainer(device=device, steps_per_task=200)
