@@ -1,6 +1,6 @@
-# Generated datasets
-results/*.npz
-results/*.npy
+# Generated datasets and outputs
+results/
+!results/.gitkeep
 
 # Python
 __pycache__/
