@@ -18,7 +18,7 @@ class WirelessTaskGenerator:
     - All tasks share the same underlying structure but with varied parameters
     """
     
-    def __init__(self, input_dim=4, output_dim=1, random_seed=42):
+    def __init__(self, input_dim=4, output_dim=1, random_seed=None):
         """
         Initialize task generator.
         
@@ -29,7 +29,10 @@ class WirelessTaskGenerator:
         """
         self.input_dim = input_dim
         self.output_dim = output_dim
-        np.random.seed(random_seed)
+        self.random_seed = random_seed
+        # If a seed is provided, make generation reproducible. Otherwise use random state.
+        if random_seed is not None:
+            np.random.seed(random_seed)
     
     def generate_single_task(self, n_support=8, n_query=64, snr=10, num_paths=3, noise_scale=0.1):
         """
@@ -215,36 +218,46 @@ def verify_dataset_diversity(tasks, n_samples=5):
 
 
 if __name__ == '__main__':
+    import argparse
     print("=" * 60)
     print("MAML Wireless Channel Estimation Dataset Generator")
     print("=" * 60)
     print()
-    
-    # Initialize generator
-    generator = WirelessTaskGenerator(input_dim=4, output_dim=1, random_seed=42)
-    
+
+    parser = argparse.ArgumentParser(description="Generate meta-learning tasks for MAML experiments.")
+    parser.add_argument("--train-tasks", type=int, default=100, help="Number of training tasks to generate (default: 100)")
+    parser.add_argument("--test-tasks", type=int, default=20, help="Number of test tasks to generate (default: 20)")
+    parser.add_argument("--n-support", type=int, default=8, help="Support set size per task (shots)")
+    parser.add_argument("--n-query", type=int, default=64, help="Query set size per task")
+    parser.add_argument("--seed", type=int, default=None, help="Optional random seed for reproducibility (default: random)")
+    parser.add_argument("--output-dir", default="results", help="Directory to save generated datasets")
+    args = parser.parse_args()
+
+    # Initialize generator (use None seed by default -> new random data each run)
+    generator = WirelessTaskGenerator(input_dim=4, output_dim=1, random_seed=args.seed)
+
     # Generate training and test tasks
-    print("Generating 100 training tasks...")
+    print(f"Generating {args.train_tasks} training tasks (support={args.n_support}, query={args.n_query})...")
     train_tasks = generator.generate_task_distribution(
-        n_tasks=100,
-        n_support=8,   # Support set: 5-10 samples
-        n_query=64     # Query set: 50-100 samples
+        n_tasks=args.train_tasks,
+        n_support=args.n_support,
+        n_query=args.n_query
     )
-    
-    print("Generating 20 test tasks...")
+
+    print(f"Generating {args.test_tasks} test tasks...")
     test_tasks = generator.generate_task_distribution(
-        n_tasks=20,
-        n_support=8,
-        n_query=64
+        n_tasks=args.test_tasks,
+        n_support=args.n_support,
+        n_query=args.n_query
     )
-    
+
     # Save dataset
-    save_dataset(train_tasks, test_tasks, output_dir='results')
-    
+    save_dataset(train_tasks, test_tasks, output_dir=args.output_dir)
+
     # Verify diversity
     verify_dataset_diversity(train_tasks, n_samples=3)
     verify_dataset_diversity(test_tasks, n_samples=3)
-    
+
     print("✓ Dataset generation complete!")
     print(f"  Total training tasks: {len(train_tasks)}")
     print(f"  Total test tasks: {len(test_tasks)}")

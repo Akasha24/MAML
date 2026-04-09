@@ -4,17 +4,19 @@ Meta-learning implementation for fast adaptation to wireless channel estimation 
 
 ## Quick Start
 
-Clone the repository and run three commands to reproduce results:
+Clone the repository and run the pipeline. By default the pipeline generates new random data on each run (use `--seed` to reproduce):
 
 ```bash
 # 1. Install dependencies
 pip install -r requirements.txt
 
-# 2. Generate dataset
-python generate_data.py
+# 2. Run full pipeline (generate -> train -> test)
+python run_all.py
 
-# 3. Train MAML and compare against baseline
+# or run steps separately (optional seed for reproducibility):
+python generate_data.py --seed 123   # generate reproducible data
 python train.py
+python test.py
 ```
 
 After ~2 minutes, results appear in `results/`:
@@ -147,15 +149,21 @@ pip install -r requirements.txt
 
 Part 3 — How to generate data
 
-Run:
+Run (one-step pipeline recommended):
 
 ```bash
-python generate_data.py
+# run the full pipeline (data is random by default)
+python run_all.py
+
+# or generate data only; pass --seed to reproduce the same dataset
+python generate_data.py --seed 42
 ```
 
 This creates synthetic wireless channel estimation tasks and saves them to `results/`:
-- `train_tasks.npz`: 100 training tasks (stacked arrays)
-- `test_tasks.npz`: 20 test tasks
+- `train_tasks.npz`: training tasks (stacked arrays)
+- `test_tasks.npz`: test tasks
+
+By default `generate_data.py` uses a random seed (so each run produces new data). To reproduce an identical dataset use `--seed <INT>`.
 
 Each task contains: `X_support` (8, 4), `Y_support` (8, 1), `X_query` (64, 4), `Y_query` (64, 1), plus `snr`, `num_paths`, `noise_scale`.
 
