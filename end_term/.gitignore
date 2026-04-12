@@ -1,6 +1,13 @@
-# Generated datasets and outputs
-results/
+# Generated datasets and model outputs (large files)
+results/*.npz
+results/*.pt
+results/*.png
+results/*.pkl
+results/*.pickle
 !results/.gitkeep
+
+# Keep the results/ directory structure
+# But exclude all generated files
 
 # Python
 __pycache__/
