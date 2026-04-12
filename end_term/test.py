@@ -166,7 +166,7 @@ def plot_training_loss_curve(output_path='results/plot_loss.png'):
     output_file = Path(output_path)
     output_file.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_file, dpi=150, bbox_inches='tight')
-    print(f"✓ Training loss curve saved: {output_file}")
+    print(f"[OK] Training loss curve saved: {output_file}")
     
     plt.close(fig)
 
@@ -242,7 +242,7 @@ def plot_maml_vs_baseline(output_path='results/plot_comparison.png'):
     output_file = Path(output_path)
     output_file.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_file, dpi=150, bbox_inches='tight')
-    print(f"✓ MAML vs Baseline comparison saved: {output_file}")
+    print(f"[OK] MAML vs Baseline comparison saved: {output_file}")
     
     plt.close(fig)
 
@@ -301,7 +301,7 @@ def evaluate_on_generated_tasks(model, n_tasks=20, n_support=20, n_query=64, inn
     Generates new tasks using WirelessTaskGenerator.
     """
     if not HAS_GENERATOR:
-        print("⚠️  WirelessTaskGenerator not available. Skipping 20-shot evaluation.")
+        print("[WARNING] WirelessTaskGenerator not available. Skipping 20-shot evaluation.")
         return None, None
         
     generator = WirelessTaskGenerator(input_dim=4, output_dim=1, random_seed=seed)
@@ -586,31 +586,31 @@ def print_metric_interpretation():
     print()
     print("LOSS VALUES (Lower is Better)")
     print("-" * 90)
-    print("• Adapted Loss: MSE after 5 gradient steps of MAML adaptation")
-    print("• Baseline Loss: MSE training a fresh model from scratch for 200 steps")
+    print("- Adapted Loss: MSE after 5 gradient steps of MAML adaptation")
+    print("- Baseline Loss: MSE training a fresh model from scratch for 200 steps")
     print()
     print("Interpretation:")
-    print("  - If Adapted < Baseline: ✓ Meta-learning helps! (positive improvement)")
-    print("  - If Adapted > Baseline: ✗ Adaptation hurts (negative improvement)")
+    print("  - If Adapted < Baseline: [OK] Meta-learning helps! (positive improvement)")
+    print("  - If Adapted > Baseline: [FAIL] Adaptation hurts (negative improvement)")
     print()
     print("IMPROVEMENT % Calculation")
     print("-" * 90)
-    print("  Improvement = (Baseline - Adapted) / Baseline × 100")
+    print("  Improvement = (Baseline - Adapted) / Baseline * 100")
     print()
-    print("  • Positive % = MAML is better (adaptation worked)")
-    print("  • Negative % = MAML is worse (adaptation diverged)")
-    print("  • ~0% = Both methods perform similarly")
+    print("  - Positive % = MAML is better (adaptation worked)")
+    print("  - Negative % = MAML is worse (adaptation diverged)")
+    print("  - ~0% = Both methods perform similarly")
     print()
     print("SANITY CHECK: EXPECTED TREND")
     print("-" * 90)
     print("As SNR (Signal-to-Noise Ratio) increases:")
-    print("  → Less measurement noise → Estimation should be easier")
-    print("  → Both losses should DECREASE monotonically")
-    print("  → Lower SNR = harder problem = higher error")
-    print("  → Higher SNR = easier problem = lower error")
+    print("  -> Less measurement noise -> Estimation should be easier")
+    print("  -> Both losses should DECREASE monotonically")
+    print("  -> Lower SNR = harder problem = higher error")
+    print("  -> Higher SNR = easier problem = lower error")
     print()
     print("If you see random spikes or non-monotonic behavior:")
-    print("  ⚠️  May indicate:")
+    print("  [WARNING] May indicate:")
     print("     - Inner loop learning rate too high (divergence)")
     print("     - Train-test data distribution mismatch")
     print("     - Insufficient meta-training iterations")
@@ -642,7 +642,7 @@ def main():
     print("Loading trained model and test dataset...")
     model = load_trained_model(device=device)
     test_tasks = load_test_tasks()
-    print(f"✓ Loaded model and {len(test_tasks)} test tasks")
+    print(f"[OK] Loaded model and {len(test_tasks)} test tasks")
     print()
     
     # Evaluate each task
@@ -720,14 +720,14 @@ def main():
     
     # Interpretation
     if avg_improvement > 0:
-        print("✓ MAML shows BETTER performance than baseline")
-        print("  → Meta-learning initialization helps fast adaptation")
+        print("[OK] MAML shows BETTER performance than baseline")
+        print("  -> Meta-learning initialization helps fast adaptation")
     elif avg_improvement < -50:
-        print("✗ MAML shows WORSE performance than baseline")
-        print("  → May need hyperparameter tuning or more meta-training iterations")
+        print("[FAIL] MAML shows WORSE performance than baseline")
+        print("  -> May need hyperparameter tuning or more meta-training iterations")
     else:
-        print("○ MAML shows comparable performance to baseline")
-        print("  → Results depend on task diversity and training iterations")
+        print("[INFO] MAML shows comparable performance to baseline")
+        print("  -> Results depend on task diversity and training iterations")
     
     print()
     print("=" * 90)
@@ -758,13 +758,13 @@ def main():
     # Generate comparison plot
     print("Generating comparison plot with test results...")
     plot_maml_vs_baseline(output_path='results/plot_comparison.png')
-    print("✓ Comparison plot saved to results/plot_comparison.png")
+    print("[OK] Comparison plot saved to results/plot_comparison.png")
     print()
     
     # Generate training loss curve
     print("Generating training loss curve...")
     plot_training_loss_curve(output_path='results/plot_loss.png')
-    print("✓ Training loss curve saved to results/plot_loss.png")
+    print("[OK] Training loss curve saved to results/plot_loss.png")
     print()
     
     # Print plot summary
@@ -775,7 +775,7 @@ def main():
     
     print()
     print("=" * 90)
-    print("✓ EVALUATION COMPLETE")
+    print("[OK] EVALUATION COMPLETE")
     print("=" * 90)
     print(f"Results saved to: {Path('results').absolute()}")
     print(f"  - results/plot_loss.png (training loss curve)")

@@ -162,10 +162,7 @@ Part 3 — How to generate data
 Run (one-step pipeline recommended):
 
 ```bash
-# run the full pipeline (data is random by default)
-python run_all.py
-
-# or generate data only; pass --seed to reproduce the same dataset
+# Generate data (use --seed to reproduce the same dataset)
 python generate_data.py --seed 42
 ```
 
@@ -200,14 +197,19 @@ Run:
 python test.py
 ```
 
-`test.py` evaluates the trained meta-model on the 20 saved test tasks. For each task it:
-- Adapts the meta-model on the support set (5 inner steps)
-- Evaluates the adapted model on the query set
-- Trains a fresh baseline model on the support set (200 steps) and evaluates on the query set
+`test.py` does four things:
+1. **Evaluates the trained meta-model** on 20 test tasks (5 inner gradient steps per task)
+2. **Compares against baseline** (trains fresh model on support set for 200 steps)
+3. **Generates both required plots:**
+   - `results/plot_loss.png` - training loss curve
+   - `results/plot_comparison.png` - MAML vs Baseline comparison
+4. **Computes few-shot results** (5-shot and 20-shot scenarios)
 
-Printed outputs include a per-task table and summary averages:
-- Average Query Loss after adaptation (MAML)
-- Average Query Loss for the baseline (trained from scratch)
+Printed outputs include:
+- Per-task results table with adapted/baseline loss and improvement %
+- Summary averages
+- Per-SNR performance breakdown
+- Metric interpretation guide
 
 Part 6 — Your results (actual numbers)
 
@@ -222,13 +224,16 @@ Notes:
 - Numbers were computed locally using `compute_table_numbers.py` which runs 20 tasks for each setting and reports averaged MSE values.
 - In this run the baseline outperformed MAML on average; this indicates the meta-training configuration may require tuning (more iterations, different inner/outer rates, or first-order MAML variants).
 
-How to reproduce the table:
+How to reproduce the few-shot table:
+
+The 5-shot and 20-shot results are now computed automatically as part of `test.py`:
 
 ```bash
-python compute_table_numbers.py
+python train.py    # Train the meta-model
+python test.py     # Run all evaluations, generate plots, and print few-shot table
 ```
 
-This script prints the 5-shot and 20-shot average query losses and a compact CSV-like line.
+The few-shot table will be printed in the console output under "Few-shot Results".
 
 ### Latest quantitative results (from most recent run)
 
@@ -241,15 +246,18 @@ The following numbers were produced by running `python train.py` and `python tes
 Notes: the baseline here is a fresh model trained on each task's support set for 200 steps (same as in `train.py`). The negative improvement indicates the meta-learning configuration needs hyperparameter tuning or more meta-training iterations for this synthetic setup.
 
 ## Files
-
-```
-.
-├── generate_data.py       # Task and dataset generation
-├── train.py               # MAML training + baseline comparison
-├── test.py                # Inference on test set (optional)
+Evaluation, plotting, and few-shot computations
 ├── requirements.txt       # Python dependencies
 ├── README.md              # This file
 └── results/
+    ├── train_tasks.npz    # Training tasks (generated)
+    ├── test_tasks.npz     # Test tasks (generated)
+    ├── plot_loss.png      # Training loss curve
+    ├── plot_comparison.png # MAML vs Baseline comparison
+    └── maml_model.pt      # Trained MAML weights
+```
+
+**Note:** `compute_table_numbers.py` and `plot_results.py` have been merged into `test.py` for a streamlined pipeline. results/
     ├── train_tasks.npz    # Training tasks (generated)
     ├── test_tasks.npz     # Test tasks (generated)
     ├── plot_loss.png      # Training curves

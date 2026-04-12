@@ -187,12 +187,12 @@ def save_dataset(train_tasks, test_tasks, output_dir='results'):
     np.savez_compressed(train_path, **train_data)
     np.savez_compressed(test_path, **test_data)
     
-    print(f"✓ Training tasks saved: {train_path}")
+    print(f"[OK] Training tasks saved: {train_path}")
     print(f"  Shape: {train_data['X_support'].shape[0]} tasks")
     print(f"  Support set: {train_data['X_support'].shape[1:]} per task")
     print(f"  Query set:   {train_data['X_query'].shape[1:]} per task")
     print()
-    print(f"✓ Test tasks saved: {test_path}")
+    print(f"[OK] Test tasks saved: {test_path}")
     print(f"  Shape: {test_data['X_support'].shape[0]} tasks")
 
 
@@ -258,6 +258,6 @@ if __name__ == '__main__':
     verify_dataset_diversity(train_tasks, n_samples=3)
     verify_dataset_diversity(test_tasks, n_samples=3)
 
-    print("✓ Dataset generation complete!")
+    print("[OK] Dataset generation complete!")
     print(f"  Total training tasks: {len(train_tasks)}")
     print(f"  Total test tasks: {len(test_tasks)}")

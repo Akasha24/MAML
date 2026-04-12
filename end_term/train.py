@@ -48,7 +48,7 @@ class MAMLTrainer:
     MAML Algorithm (plain English):
     1. Start with shared weights θ
     2. For each task in batch:
-       a) Take few gradient steps on support set → get adapted weights θ'
+       a) Take few gradient steps on support set -> get adapted weights θ'
        b) Compute loss on query set using θ'
     3. Update θ based on query losses (meta-gradient)
     4. Repeat
@@ -359,7 +359,7 @@ def plot_results(history, output_path='results/plot_loss.png'):
     
     plt.tight_layout()
     plt.savefig(output_path, dpi=100)
-    print(f"✓ Plot saved: {output_path}")
+    print(f"[OK] Plot saved: {output_path}")
     plt.close()
 
 
@@ -460,7 +460,7 @@ def main():
     
     # Save model
     torch.save(maml_trainer.model.state_dict(), 'results/maml_model.pt')
-    print("✓ Model saved: results/maml_model.pt")
+    print("[OK] Model saved: results/maml_model.pt")
     print()
 
 
