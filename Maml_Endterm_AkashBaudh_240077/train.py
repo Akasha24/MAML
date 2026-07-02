@@ -1,6 +1,6 @@
 """
-Meta-learning training for wireless channel estimation using MAML.
-Compares MAML (meta-learned initialization) against baseline (train from scratch).
+Meta-learning training for wireless channel estimation using MAML and Reptile.
+Compares MAML, Reptile (first-order MAML variant), and Baseline (train from scratch).
 """
 
 import numpy as np
@@ -67,7 +67,7 @@ class MAMLTrainer:
             inner_lr: Learning rate for inner loop (task adaptation)
             outer_lr: Learning rate for outer loop (meta-update)
             inner_steps: Number of gradient steps per task
-        """
+                   """
         self.model = model.to(device)
         self.device = device
         self.inner_lr = inner_lr
@@ -100,6 +100,9 @@ class MAMLTrainer:
             support_loss = self.loss_fn(support_pred, y_support)
             support_loss.backward()
             adapted_optim.step()
+        
+        # Clear any gradients left on the adapted model before query evaluation
+        adapted_optim.zero_grad()
         
         # Final support loss
         with torch.no_grad():
@@ -147,11 +150,19 @@ class MAMLTrainer:
             query_pred = adapted_model(x_query)
             query_loss = self.loss_fn(query_pred, y_query)
             
-            # Accumulate gradients (will backprop through adaptation)
+            # First-order MAML: compute query gradients on adapted parameters,
+            # then transfer them to the base model without second-order terms.
             query_loss.backward()
+            for base_param, adapted_param in zip(self.model.parameters(), adapted_model.parameters()):
+                if adapted_param.grad is None:
+                    continue
+                if base_param.grad is None:
+                    base_param.grad = adapted_param.grad.detach().clone()
+                else:
+                    base_param.grad += adapted_param.grad.detach()
             total_query_loss += query_loss.item()
         
-        # Meta-update: update base model weights
+        # Meta-update: update base model weights using accumulated task gradients
         self.meta_optimizer.step()
         
         return {
@@ -184,6 +195,184 @@ class MAMLTrainer:
             y_query = torch.from_numpy(task['Y_query']).float().to(self.device)
             
             # Adapt on support (need gradients for inner loop)
+            adapted_model, support_loss = self.inner_loop(x_support, y_support)
+            total_support_loss += support_loss
+            
+            # Evaluate on query
+            with torch.no_grad():
+                query_pred = adapted_model(x_query)
+                query_loss = self.loss_fn(query_pred, y_query).item()
+            total_query_loss += query_loss
+        
+        self.model.train(was_training)
+        
+        return {
+            'avg_query_loss': total_query_loss / num_tasks,
+            'avg_support_loss': total_support_loss / num_tasks,
+            'num_tasks': num_tasks
+        }
+
+
+class ReptileTrainer:
+    """
+    Reptile meta-learning trainer for channel estimation.
+    
+    Reptile Algorithm (Nichol et al., 2018):
+    1. Start with shared weights θ
+    2. For each task in batch:
+       a) Clone model -> take k SGD steps on support set -> get adapted weights θ'
+       b) Compute direction: Δ = θ' - θ
+    3. Update θ by moving toward the average adapted weights:
+       θ ← θ + ε * mean(Δ)
+    
+    Key differences from MAML:
+    - No query-set gradient computation during training
+    - No second-order gradients needed
+    - Simpler, more memory-efficient
+    - Often more stable in practice
+    """
+    
+    def __init__(self, model, device='cpu', inner_lr=0.01, reptile_lr=0.001,
+                 inner_steps=5):
+        """
+        Initialize Reptile trainer.
+        
+        Args:
+            model: Neural network to train
+            device: 'cpu' or 'cuda'
+            inner_lr: Learning rate for inner loop (task adaptation via SGD)
+            reptile_lr: Outer step size (Adam learning rate)
+            inner_steps: Number of gradient steps per task in inner loop
+        """
+        self.model = model.to(device)
+        self.device = device
+        self.inner_lr = inner_lr
+        self.reptile_lr = reptile_lr
+        self.inner_steps = inner_steps
+        self.meta_optimizer = optim.Adam(self.model.parameters(), lr=reptile_lr)
+        self.loss_fn = nn.MSELoss()
+    
+    def inner_loop(self, x_support, y_support):
+        """
+        Adapt to a single task (inner loop).
+        
+        Takes several SGD steps on the support set.
+        
+        Args:
+            x_support: Support inputs
+            y_support: Support labels
+            
+        Returns:
+            adapted_model: Model with task-adapted weights
+            final_support_loss: Loss after adaptation
+        """
+        adapted_model = self.model.clone()
+        adapted_optim = optim.SGD(adapted_model.parameters(), lr=self.inner_lr)
+        
+        for _ in range(self.inner_steps):
+            adapted_optim.zero_grad()
+            pred = adapted_model(x_support)
+            loss = self.loss_fn(pred, y_support)
+            loss.backward()
+            adapted_optim.step()
+        
+        # Final support loss
+        with torch.no_grad():
+            pred = adapted_model(x_support)
+            final_loss = self.loss_fn(pred, y_support).item()
+        
+        return adapted_model, final_loss
+    
+    def outer_loop(self, tasks_batch):
+        """
+        Reptile meta-update step (outer loop).
+        
+        For each task:
+        1. Clone model and adapt on support set for k steps
+        2. Compute weight difference (θ' - θ)
+        
+        Then move base weights toward average adapted weights using Adam optimizer.
+        
+        Args:
+            tasks_batch: List of task dicts
+            
+        Returns:
+            dict with metrics
+        """
+        total_query_loss = 0.0
+        total_support_loss = 0.0
+        num_tasks = len(tasks_batch)
+        
+        # Accumulate weight differences across tasks
+        weight_diffs = None
+        
+        for task in tasks_batch:
+            x_support = torch.from_numpy(task['X_support']).float().to(self.device)
+            y_support = torch.from_numpy(task['Y_support']).float().to(self.device)
+            x_query = torch.from_numpy(task['X_query']).float().to(self.device)
+            y_query = torch.from_numpy(task['Y_query']).float().to(self.device)
+            
+            # Inner loop: adapt to this task
+            adapted_model, support_loss = self.inner_loop(x_support, y_support)
+            total_support_loss += support_loss
+            
+            # Evaluate on query for monitoring (not used for gradient)
+            with torch.no_grad():
+                query_pred = adapted_model(x_query)
+                query_loss = self.loss_fn(query_pred, y_query).item()
+            total_query_loss += query_loss
+            
+            # Compute weight difference: θ' - θ
+            if weight_diffs is None:
+                weight_diffs = [
+                    (adapted_p.data - base_p.data).clone()
+                    for base_p, adapted_p in zip(self.model.parameters(), adapted_model.parameters())
+                ]
+            else:
+                for i, (base_p, adapted_p) in enumerate(
+                    zip(self.model.parameters(), adapted_model.parameters())
+                ):
+                    weight_diffs[i] += (adapted_p.data - base_p.data)
+        
+        # Adam-accelerated Reptile update: θ ← θ - Adam(-mean(θ' - θ))
+        self.meta_optimizer.zero_grad()
+        for param, diff in zip(self.model.parameters(), weight_diffs):
+            # Gradient is the negative of the weight differences (moving toward them)
+            param.grad = -diff / num_tasks
+        self.meta_optimizer.step()
+        
+        return {
+            'avg_query_loss': total_query_loss / num_tasks,
+            'avg_support_loss': total_support_loss / num_tasks,
+            'num_tasks': num_tasks
+        }
+    
+    def evaluate(self, tasks_batch):
+        """
+        Evaluate Reptile model on a batch of tasks.
+        
+        Uses the same inner-loop adaptation as training, then evaluates on query set.
+        
+        Args:
+            tasks_batch: List of task dicts
+            
+        Returns:
+            dict with evaluation metrics
+        """
+        was_training = self.model.training
+        self.model.eval()
+        
+        total_query_loss = 0.0
+        total_support_loss = 0.0
+        num_tasks = len(tasks_batch)
+        
+        for task in tasks_batch:
+            x_support = torch.from_numpy(task['X_support']).float().to(self.device)
+            y_support = torch.from_numpy(task['Y_support']).float().to(self.device)
+            x_query = torch.from_numpy(task['X_query']).float().to(self.device)
+            y_query = torch.from_numpy(task['Y_query']).float().to(self.device)
+            
+            # Adapt on support
             adapted_model, support_loss = self.inner_loop(x_support, y_support)
             total_support_loss += support_loss
             
@@ -331,52 +520,60 @@ def load_dataset(data_path='results'):
 
 def plot_results(history, output_path='results/plot_loss.png'):
     """
-    Plot training curves comparing MAML vs Baseline.
+    Plot training curves comparing MAML, Reptile, and Baseline.
     
     Args:
-        history: Dict with 'maml_query', 'maml_support', 'baseline_query', 'baseline_support'
+        history: Dict with 'maml_query', 'maml_support', 'reptile_query',
+                 'reptile_support', 'baseline_query', 'baseline_support'
         output_path: Where to save figure
     """
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
     
     # Query loss
-    axes[0].plot(history['maml_query'], label='MAML Query', linewidth=2)
-    axes[0].plot(history['baseline_query'], label='Baseline Query', linewidth=2)
-    axes[0].set_xlabel('Iteration')
-    axes[0].set_ylabel('Query Loss (MSE)')
-    axes[0].set_title('Query Loss: MAML vs Baseline')
-    axes[0].legend()
+    axes[0].plot(history['maml_query'], label='MAML Query', linewidth=2, color='#2196F3')
+    axes[0].plot(history['reptile_query'], label='Reptile Query', linewidth=2, color='#4CAF50')
+    axes[0].plot(history['baseline_query'], label='Baseline Query', linewidth=2, color='#F44336', linestyle='--')
+    axes[0].set_xlabel('Iteration', fontsize=11)
+    axes[0].set_ylabel('Query Loss (MSE)', fontsize=11)
+    axes[0].set_title('Query Loss: MAML vs Reptile vs Baseline', fontsize=13, fontweight='bold')
+    axes[0].legend(fontsize=10)
     axes[0].grid(True, alpha=0.3)
     
     # Support loss
-    axes[1].plot(history['maml_support'], label='MAML Support', linewidth=2)
-    axes[1].plot(history['baseline_support'], label='Baseline Support', linewidth=2)
-    axes[1].set_xlabel('Iteration')
-    axes[1].set_ylabel('Support Loss (MSE)')
-    axes[1].set_title('Support Loss: MAML vs Baseline')
-    axes[1].legend()
+    axes[1].plot(history['maml_support'], label='MAML Support', linewidth=2, color='#2196F3')
+    axes[1].plot(history['reptile_support'], label='Reptile Support', linewidth=2, color='#4CAF50')
+    axes[1].plot(history['baseline_support'], label='Baseline Support', linewidth=2, color='#F44336', linestyle='--')
+    axes[1].set_xlabel('Iteration', fontsize=11)
+    axes[1].set_ylabel('Support Loss (MSE)', fontsize=11)
+    axes[1].set_title('Support Loss: MAML vs Reptile vs Baseline', fontsize=13, fontweight='bold')
+    axes[1].legend(fontsize=10)
     axes[1].grid(True, alpha=0.3)
     
     plt.tight_layout()
-    plt.savefig(output_path, dpi=100)
+    plt.savefig(output_path, dpi=150)
     print(f"[OK] Plot saved: {output_path}")
     plt.close()
 
 
 def main():
     print("=" * 70)
-    print("MAML Training for Wireless Channel Estimation")
+    print("MAML + Reptile Training for Wireless Channel Estimation")
     print("=" * 70)
     print()
     
     # Configuration
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    num_iterations = 50
+    num_iterations = 1000
     batch_size = 4  # Tasks per batch
+    inner_lr = 0.01
+    inner_steps = 10
+    outer_lr = 0.001
     
     print(f"Device: {device}")
     print(f"Meta-learning iterations: {num_iterations}")
     print(f"Batch size: {batch_size} tasks")
+    print(f"Inner LR: {inner_lr}, Inner steps: {inner_steps}")
+    print(f"Outer LR (MAML): {outer_lr}")
     print()
     
     # Load dataset
@@ -388,17 +585,29 @@ def main():
     
     # Initialize models and trainers
     print("Initializing models...")
-    base_model = ChannelEstimationNetwork(input_dim=4, output_dim=1)
     
+    # MAML model
+    maml_model = ChannelEstimationNetwork(input_dim=4, output_dim=1)
     maml_trainer = MAMLTrainer(
-        model=base_model,
+        model=maml_model,
         device=device,
-        inner_lr=0.0001,  # Reduced to stable learning rate
-        outer_lr=0.001,
-        inner_steps=1    # Reduced from 5 to prevent adaptation overfitting
+        inner_lr=inner_lr,
+        outer_lr=outer_lr,
+        inner_steps=inner_steps
     )
     
-    baseline_trainer = BaselineTrainer(device=device, steps_per_task=200)
+    # Reptile model (separate initialization)
+    reptile_model = ChannelEstimationNetwork(input_dim=4, output_dim=1)
+    reptile_trainer = ReptileTrainer(
+        model=reptile_model,
+        device=device,
+        inner_lr=inner_lr,
+        reptile_lr=0.003,
+        inner_steps=inner_steps
+    )
+    
+    # Baseline trainer
+    baseline_trainer = BaselineTrainer(device=device, steps_per_task=50)
     print()
     
     # Training loop
@@ -408,7 +617,7 @@ def main():
     history = defaultdict(list)
     
     for iteration in range(num_iterations):
-        # Sample batch of training tasks
+        # Sample batch of training tasks (same batch for fair comparison)
         batch_indices = np.random.choice(len(train_tasks), size=batch_size, replace=False)
         train_batch = [train_tasks[i] for i in batch_indices]
         
@@ -417,15 +626,22 @@ def main():
         history['maml_query'].append(maml_metrics['avg_query_loss'])
         history['maml_support'].append(maml_metrics['avg_support_loss'])
         
+        # Reptile meta-update
+        reptile_metrics = reptile_trainer.outer_loop(train_batch)
+        history['reptile_query'].append(reptile_metrics['avg_query_loss'])
+        history['reptile_support'].append(reptile_metrics['avg_support_loss'])
+        
         # Baseline evaluation (on same batch for fair comparison)
         baseline_metrics = baseline_trainer.evaluate(train_batch)
         history['baseline_query'].append(baseline_metrics['avg_query_loss'])
         history['baseline_support'].append(baseline_metrics['avg_support_loss'])
         
-        if (iteration + 1) % 10 == 0:
+        if (iteration + 1) % 100 == 0:
             print(f"Iteration {iteration + 1}/{num_iterations}")
             print(f"  MAML     - Query Loss: {maml_metrics['avg_query_loss']:.6f}, "
                   f"Support Loss: {maml_metrics['avg_support_loss']:.6f}")
+            print(f"  Reptile  - Query Loss: {reptile_metrics['avg_query_loss']:.6f}, "
+                  f"Support Loss: {reptile_metrics['avg_support_loss']:.6f}")
             print(f"  Baseline - Query Loss: {baseline_metrics['avg_query_loss']:.6f}, "
                   f"Support Loss: {baseline_metrics['avg_support_loss']:.6f}")
             print()
@@ -436,6 +652,7 @@ def main():
     # Final evaluation on test set
     print("Evaluating on test set...")
     maml_test = maml_trainer.evaluate(test_tasks)
+    reptile_test = reptile_trainer.evaluate(test_tasks)
     baseline_test = baseline_trainer.evaluate(test_tasks)
     
     print()
@@ -446,21 +663,44 @@ def main():
     print(f"  Query Loss:   {maml_test['avg_query_loss']:.6f}")
     print(f"  Support Loss: {maml_test['avg_support_loss']:.6f}")
     print()
+    print(f"Reptile:")
+    print(f"  Query Loss:   {reptile_test['avg_query_loss']:.6f}")
+    print(f"  Support Loss: {reptile_test['avg_support_loss']:.6f}")
+    print()
     print(f"Baseline (train from scratch):")
     print(f"  Query Loss:   {baseline_test['avg_query_loss']:.6f}")
     print(f"  Support Loss: {baseline_test['avg_support_loss']:.6f}")
     print()
-    improvement = (baseline_test['avg_query_loss'] - maml_test['avg_query_loss']) / baseline_test['avg_query_loss'] * 100
-    print(f"MAML improvement: {improvement:.1f}%")
+    
+    maml_improvement = (baseline_test['avg_query_loss'] - maml_test['avg_query_loss']) / baseline_test['avg_query_loss'] * 100
+    reptile_improvement = (baseline_test['avg_query_loss'] - reptile_test['avg_query_loss']) / baseline_test['avg_query_loss'] * 100
+    print(f"MAML improvement over baseline:    {maml_improvement:.1f}%")
+    print(f"Reptile improvement over baseline:  {reptile_improvement:.1f}%")
     print("=" * 70)
     print()
     
     # Plot results
     plot_results(history)
     
-    # Save model
+    # Save training history for test.py to use real data in plots
+    history_path = Path('results') / 'training_history.npz'
+    np.savez_compressed(
+        history_path,
+        maml_query=np.array(history['maml_query']),
+        maml_support=np.array(history['maml_support']),
+        reptile_query=np.array(history['reptile_query']),
+        reptile_support=np.array(history['reptile_support']),
+        baseline_query=np.array(history['baseline_query']),
+        baseline_support=np.array(history['baseline_support']),
+    )
+    print(f"[OK] Training history saved: {history_path}")
+    
+    # Save models
     torch.save(maml_trainer.model.state_dict(), 'results/maml_model.pt')
-    print("[OK] Model saved: results/maml_model.pt")
+    print("[OK] MAML model saved: results/maml_model.pt")
+    
+    torch.save(reptile_trainer.model.state_dict(), 'results/reptile_model.pt')
+    print("[OK] Reptile model saved: results/reptile_model.pt")
     print()
 
 

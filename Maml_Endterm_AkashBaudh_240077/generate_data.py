@@ -105,7 +105,7 @@ class WirelessTaskGenerator:
         # Simplified here to regressors on pilot signals
         Y = np.zeros((X.shape[0], self.output_dim))
         
-        for i, coeff in enumerate(channel_coeffs[:self.output_dim]):
+        for i, coeff in enumerate(channel_coeffs):
             Y[:, 0] += np.real(coeff) * X[:, i % self.input_dim]
         
         return Y
